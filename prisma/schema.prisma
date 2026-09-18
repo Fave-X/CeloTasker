@@ -1,0 +1,150 @@
+// CeloTasker — Prisma schema (Stage 1A: foundation, SQLite for MVP)
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+/// A task posted for agents to complete and settle.
+model Task {
+  id           String   @id @default(cuid())
+  title        String
+  description  String
+  /// Reward amount in smallest unit of the payout token (e.g. cUSD wei)
+  rewardAmount String
+  /// ERC-20 token contract address used for payout (e.g. cUSD on Celo)
+  rewardToken  String
+  /// Current lifecycle state, see lib/workflow/TaskStatus.ts:
+  /// CREATED | OPEN | ASSIGNED | IN_PROGRESS | SUBMITTED | UNDER_VALIDATION |
+  /// UNDER_REVIEW | SETTLING | SETTLED | COMPLETED | REJECTED | PAYMENT_FAILED | EXPIRED
+  status       String   @default("CREATED")
+  /// Address of the task creator / funder
+  creator      String
+  /// Address of the assigned solver, if any
+  assignee     String?
+  /// Number of revision rounds requested while under review
+  revisionCount Int    @default(0)
+  deadline     DateTime?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  criteria    RubricCriteria[]
+  submissions Submission[]
+  settlements Settlement[]
+  events      TaskEvent[]
+
+  @@index([status])
+  @@index([creator])
+}
+
+/// Individual evaluation criterion for a task (the rubric).
+model RubricCriteria {
+  id         String  @id @default(cuid())
+  taskId     String
+  task       Task    @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  /// What must be satisfied, e.g. "Code compiles and tests pass"
+  description String
+  /// Relative weight within the task's rubric (0–100)
+  weight     Int     @default(1)
+  /// Ordered for deterministic evaluation
+  order      Int     @default(0)
+
+  @@index([taskId])
+}
+
+/// A submission made against a task.
+model Submission {
+  id          String   @id @default(cuid())
+  taskId      String
+  task        Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  /// Address of the submitting agent/user
+  submitter   String
+  /// URI or content hash of the submitted work (ERC-8021 attribution later)
+  contentRef  String
+  /// Evaluation result: PENDING | APPROVED | REJECTED | SUPERSEDED.
+  /// A SUPERSEDED submission is from an earlier revision attempt and must
+  /// never be treated as the latest/valid submission for settlement.
+  status      String   @default("PENDING")
+  /// Aggregate evaluation score, if evaluated
+  score       Float?
+  createdAt   DateTime @default(now())
+
+  settlements Settlement[]
+
+  @@index([taskId])
+  @@index([submitter])
+}
+
+/// Settlement of an accepted submission (payment execution happens in later stages).
+model Settlement {
+  id           String   @id @default(cuid())
+  /// Unique: exactly one settlement may ever exist per submission (Stage 4.2).
+  /// Backs the guarded UNDER_REVIEW -> SETTLING transition as a hard,
+  /// database-level guarantee against duplicate settlement records.
+  submissionId String   @unique
+  submission   Submission @relation(fields: [submissionId], references: [id])
+  taskId       String
+  task         Task     @relation(fields: [taskId], references: [id])
+  /// Recipient address
+  recipient    String
+  /// Amount settled, in token smallest units
+  amount       String
+  rewardToken  String
+  /// Settlement lifecycle (Stage 5C):
+  ///   PENDING   — authorized by the Stage 4.2 gate, not yet claimed for execution
+  ///   BROADCAST — claimed by an executor; txHash is persisted immediately after
+  ///               a successful broadcast (null only in the ambiguous crash window)
+  ///   CONFIRMED — the on-chain receipt status was verified as success
+  ///   FAILED    — terminal failure (e.g. receipt reverted)
+  status       String   @default("PENDING")
+  /// On-chain transaction hash once executed (populated in later stages)
+  ///
+  /// UNIQUE (M-A): a transaction hash identifies exactly ONE payment, so at
+  /// most one settlement may ever own it. NULL stays allowed (and may repeat —
+  /// SQLite treats NULLs as distinct in a UNIQUE index), which keeps the
+  /// fail-closed BROADCAST-with-null-txHash crash window representable.
+  ///
+  /// This constraint is what makes "two recoverers attach the same broadcast"
+  /// impossible: the ownership check (SELECT) and the attach (UPDATE) are
+  /// separate statements, so the loser of that race is rejected by the
+  /// DATABASE (P2002) instead of silently creating a second claim on one
+  /// payment.
+  txHash       String?  @unique
+  createdAt    DateTime @default(now())
+
+  @@index([taskId])
+}
+
+/// Append-only audit trail. NEVER update or delete records of this model.
+/// Enforced by convention: only create operations are allowed in code.
+model TaskEvent {
+  id        String   @id @default(cuid())
+  taskId    String
+  task      Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  /// Event type, e.g. TASK_CREATED | SUBMISSION_RECEIVED | EVALUATION_COMPLETED | SETTLEMENT_EXECUTED
+  eventType String
+  /// Address that triggered the event
+  actor     String?
+  /// Free-form JSON payload (stringified) for event details
+  payload   String?
+  createdAt DateTime @default(now())
+
+  @@index([taskId])
+  @@index([eventType])
+}
+
+/// Server-side session store for wallet authentication.
+/// Only a SHA-256 hash of the session token is stored — never the token itself.
+model Session {
+  id        String   @id
+  /// Authenticated Celo address (lowercase)
+  address   String
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@index([address])
+}

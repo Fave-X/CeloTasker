@@ -1,0 +1,65 @@
+@import "tailwindcss";
+
+/*
+ * CeloTasker design tokens (Step 1 — locked).
+ *
+ * System rules (do not drift):
+ * - ONE warm neutral family (paper/ink/line) — never mix cool grays.
+ * - ONE brand accent: deep Celo green. Amber and rust are FUNCTIONAL status
+ *   colors only (awaiting / terminal failure) — never decoration.
+ * - Radius system: 12px containers/cards (rounded-card), 8px controls/chips
+ *   (rounded-control). No pills.
+ * - IBM Plex Mono ONLY for addresses, hashes, ids and system metadata.
+ */
+@theme {
+  --color-paper: #faf9f5;
+  --color-paper-raised: #ffffff;
+  --color-paper-sunken: #f3f1ea;
+  --color-ink: #191c1a;
+  --color-ink-soft: #4a524d;
+  --color-ink-faint: #78817b;
+  --color-line: #e7e4dc;
+  --color-line-strong: #d3cec1;
+
+  --color-celo: #0e5f45;
+  --color-celo-deep: #0a4a37;
+  --color-celo-wash: #e9f1ec;
+  --color-celo-ink: #0b3d2e;
+
+  --color-warn: #8a6d1f;
+  --color-warn-wash: #f5efdd;
+  --color-fail: #a24936;
+  --color-fail-wash: #f6ebe7;
+
+  --radius-card: 12px;
+  --radius-control: 8px;
+
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-plex-mono), ui-monospace, monospace;
+}
+
+html {
+  background-color: var(--color-paper);
+}
+
+body {
+  text-rendering: optimizeLegibility;
+}
+
+::selection {
+  background-color: var(--color-celo-wash);
+  color: var(--color-celo-ink);
+}
+
+/* Visible, consistent focus treatment across the product. */
+:focus-visible {
+  outline: 2px solid var(--color-celo);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/* Tactile feedback for interactive controls (taste: physical push). */
+button:active {
+  transform: translateY(0.5px);
+}
+

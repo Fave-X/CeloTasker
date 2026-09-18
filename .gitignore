@@ -1,0 +1,48 @@
+# dependencies
+/node_modules
+/.pnp
+.pnp.*
+
+# next.js
+/.next/
+/out/
+
+# production
+/build
+
+# misc
+.DS_Store
+*.pem
+
+# debug
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# env files — NEVER commit real secrets
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# prisma
+/prisma/dev.db
+/prisma/dev.db-journal
+/prisma/migrations/dev.db*
+
+# typescript
+*.tsbuildinfo
+next-env.d.ts
+
+# vercel
+.vercel
+
+# hackathon repo prep — local-only artifacts (appended; existing rules above untouched)
+.env.*
+!.env.example
+*.tmp.mjs
+ct-e2e/
+*.sqlite
+*.sqlite3
