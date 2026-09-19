@@ -10,6 +10,7 @@ import {
 import { rateLimit, clientKeyFromRequest } from "@/lib/security/rateLimit";
 import { serializeSettlement } from "@/lib/api/serialize";
 import { settleSubmission } from "@/lib/settlement/SettlementExecutor";
+import { prisma } from "@/lib/prisma.ts";
 
 /**
  * POST /api/settlements — request settlement of an approved submission.
@@ -149,4 +150,85 @@ export async function POST(request: Request) {
     },
     { status: 201 }
   );
+}
+
+/**
+ * DELETE /api/settlements — delete a stuck/failed settlement to allow retry.
+ * Only the worker who submitted the work may delete their own settlement.
+ * Only allowed for settlements in BROADCAST, FAILED, or PENDING status
+ * (not CONFIRMED, which means the payment was successful).
+ */
+export async function DELETE(request: Request) {
+  const limit = rateLimit(
+    clientKeyFromRequest(request, "DELETE /api/settlements"),
+    { limit: 10, windowMs: 60_000 }
+  );
+  if (!limit.ok) {
+    return NextResponse.json(
+      { error: "Too many requests" },
+      { status: 429, headers: { "Retry-After": String(limit.retryAfterSeconds) } }
+    );
+  }
+
+  let body: unknown;
+  try {
+    body = await request.json();
+  } catch {
+    return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
+  }
+
+  const { submissionId } = body as { submissionId?: string };
+  if (!submissionId || typeof submissionId !== "string") {
+    return NextResponse.json({ error: "submissionId is required" }, { status: 400 });
+  }
+
+  const actor = await getAuthenticatedActor(request);
+  try {
+    requireAuthenticatedActor(actor);
+  } catch (err) {
+    if (err instanceof UnauthorizedActorError) {
+      return NextResponse.json(
+        { error: "Authentication required" },
+        { status: 401 }
+      );
+    }
+    throw err;
+  }
+
+  // Verify the actor is the submitter of this submission
+  const submission = await prisma.submission.findUnique({
+    where: { id: submissionId },
+  });
+  if (!submission) {
+    return NextResponse.json({ error: "Submission not found" }, { status: 404 });
+  }
+  if (!actor.address || submission.submitter.toLowerCase() !== actor.address.toLowerCase()) {
+    return NextResponse.json(
+      { error: "Only the worker who submitted may delete the settlement" },
+      { status: 403 }
+    );
+  }
+
+  // Find the settlement
+  const settlement = await prisma.settlement.findUnique({
+    where: { submissionId },
+  });
+  if (!settlement) {
+    return NextResponse.json({ error: "No settlement found for this submission" }, { status: 404 });
+  }
+
+  // Only allow deletion of non-confirmed settlements
+  if (settlement.status === "CONFIRMED") {
+    return NextResponse.json(
+      { error: "Cannot delete a confirmed settlement" },
+      { status: 409 }
+    );
+  }
+
+  // Delete the settlement
+  await prisma.settlement.delete({
+    where: { submissionId },
+  });
+
+  return NextResponse.json({ ok: true });
 }

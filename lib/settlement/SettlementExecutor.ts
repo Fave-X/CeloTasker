@@ -357,9 +357,30 @@ async function executeSettlement(
     // stays BROADCAST with a null txHash, and every future retry is routed
     // through the VERIFIED recovery scan — a second transaction is never
     // broadcast for this settlement.
+    // HOWEVER: the task status was changed to SETTLING by the authorization
+    // gate. If broadcast failed, we MUST roll back the task to UNDER_REVIEW
+    // so the worker can retry. The settlement stays BROADCAST (with null txHash)
+    // for recovery purposes, but the task returns to UNDER_REVIEW for retry.
+    try {
+      await prisma.task.update({
+        where: { id: task.id },
+        data: { status: "UNDER_REVIEW" },
+      });
+      await recordTaskEvent({
+        taskId: task.id,
+        eventType: "SETTLEMENT_REJECTED",
+        actor: actorAddress,
+        metadata: failureMetadata("broadcast_failed_ambiguous", {
+          ...commonAudit,
+          note: "broadcast failed; task status rolled back to UNDER_REVIEW for retry",
+        }),
+      });
+    } catch (rollbackErr) {
+      console.error("Failed to rollback task status to UNDER_REVIEW:", rollbackErr);
+    }
     return reject("broadcast_failed_ambiguous", 502, {
       settlementId: settlement.id,
-      note: "submission status ambiguous; broadcast claim retained, re-send refused",
+      note: "submission status ambiguous; broadcast claim retained, re-send refused; task rolled back to UNDER_REVIEW",
     });
   }
 

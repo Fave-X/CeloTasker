@@ -15,7 +15,7 @@ const securityHeaders = [
       "style-src 'self' 'unsafe-inline'",
       "img-src 'self' data: blob:",
       "font-src 'self' data:",
-      "connect-src 'self'",
+      "connect-src 'self' https://rpc.ankr.com https://forno.celo.org",
       "object-src 'none'",
       "base-uri 'self'",
       "form-action 'self'",

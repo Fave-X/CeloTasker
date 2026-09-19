@@ -6,8 +6,12 @@ import { getTaskForActor } from "@/lib/workflow/TaskService";
 
 /**
  * GET /api/tasks/[id] — task detail (authenticated, ACL'd).
- * Only the creator or the assigned worker may view full details; unrelated
- * workers cannot access private task data.
+ *
+ * While a task is OPEN it is viewable by ANY authenticated session, so workers
+ * who have not claimed it can inspect it before claiming (the same data is
+ * already public, unauthenticated, via GET /api/tasks). For every other status
+ * only the creator or the assigned worker may view details; unrelated workers
+ * cannot access private task data.
  */
 export async function GET(
   request: Request,
@@ -34,7 +38,7 @@ export async function GET(
     return NextResponse.json({ error: "Invalid task id" }, { status: 400 });
   }
 
-  const result = await getTaskForActor(id, actor.address);
+  const result = await getTaskForActor(id, actor.address, { allowOpenView: true });
   if (!result.ok) {
     const message =
       result.reason === "not_found" ? "Task not found" : "Access denied";

@@ -16,6 +16,10 @@
  *   Every result therefore carries contentProven: false.
  */
 import type { RubricCriteria, Submission, Task } from "@prisma/client";
+// Reuses the SINGLE authoritative dev-override predicate from the evaluator, so
+// the two relaxed paths (evaluation fallback + free-text submissions) can never
+// drift apart on what "dev mode" means.
+import { isDevOverrideArmed } from "../evaluation/GeminiEvaluator.ts";
 
 /** URI schemes a submission content reference may use. */
 const ALLOWED_SCHEMES = ["ipfs", "https"] as const;
@@ -115,14 +119,26 @@ export function validateSubmissionContent(
     contentRef.length > MAX_CONTENT_REF_LENGTH ? "content_ref_too_long" : null
   );
 
-  // 3. Allowed scheme (deterministic whitelist, no fetching).
+  // 3 & 4. URI shape checks (allowed scheme + syntactic well-formedness).
+  //
+  // These two — and ONLY these two — are waived when the dev override is armed
+  // (AI_AUTO_APPROVE=true, non-production, and not under the test runner), so a
+  // demo worker can submit free prose as the contentRef. Checks 1, 2, 5, 6 and 7
+  // (presence, size, assignee, deadline, rubric) stay fully enforced, and every
+  // production and test run keeps the strict URI contract.
+  const freeTextWaiver = isDevOverrideArmed();
+  const waiverNote = freeTextWaiver
+    ? " — WAIVED (AI_AUTO_APPROVE dev override)"
+    : "";
+
   let scheme = "";
   const schemeMatch = /^([a-zA-Z][a-zA-Z0-9+.-]*):/.exec(trimmed);
   if (schemeMatch) scheme = schemeMatch[1].toLowerCase();
-  const schemeAllowed = (ALLOWED_SCHEMES as readonly string[]).includes(scheme);
+  const schemeAllowed =
+    freeTextWaiver || (ALLOWED_SCHEMES as readonly string[]).includes(scheme);
   const schemeCheck = check(
     "content_ref_scheme_allowed",
-    "Content reference uses an allowed scheme (ipfs or https)",
+    "Content reference uses an allowed scheme (ipfs or https)" + waiverNote,
     schemeAllowed,
     schemeAllowed ? null : `scheme_not_allowed:${scheme || "none"}`
   );
@@ -131,11 +147,12 @@ export function validateSubmissionContent(
   const wellFormed = presentCheck.passed
     ? isWellFormedContentRef(trimmed)
     : { ok: false, detail: "content_ref_missing" };
+  const wellFormedPassed = freeTextWaiver || wellFormed.ok;
   const wellFormedCheck = check(
     "content_ref_well_formed",
-    "Content reference is syntactically well formed (no fetching)",
-    wellFormed.ok,
-    wellFormed.ok ? null : wellFormed.detail
+    "Content reference is syntactically well formed (no fetching)" + waiverNote,
+    wellFormedPassed,
+    wellFormedPassed ? null : wellFormed.detail
   );
 
   // 5. Consistency: the submission must come from the task's assigned worker.

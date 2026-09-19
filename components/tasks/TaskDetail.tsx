@@ -169,7 +169,14 @@ function TaskContent({ state, identity, onClaimed, onRefresh }: {
         <p className="mt-7 border-t border-line pt-6 text-sm text-ink-soft">This task is reserved for a specific worker.</p>
       )}
       {worker && task.status === "IN_PROGRESS" && (
-        <SubmitWorkForm taskId={task.id} deadline={task.deadline} onSubmitSuccess={onRefresh} />
+        <SubmitWorkForm
+          taskId={task.id}
+          title={task.title}
+          description={task.description}
+          criteria={task.criteria}
+          deadline={task.deadline}
+          onSubmitSuccess={onRefresh}
+        />
       )}
       {worker && task.status === "ASSIGNED" && (
         <p className="mt-7 border-t border-line pt-6 text-sm text-ink-soft">The task is assigned to you. Submitting opens once work is in progress.</p>

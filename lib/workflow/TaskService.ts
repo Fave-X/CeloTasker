@@ -487,14 +487,36 @@ export async function requestRevision(taskId: string, actorAddress: string) {
 
 // ─── 6. Task retrieval ───────────────────────────────────────
 
-/** Detail access control: only the creator or the assignee. */
-export async function getTaskForActor(taskId: string, actorAddress: string) {
+/**
+ * Detail access control: only the creator or the assignee.
+ *
+ * One opt-in exception, used exclusively by GET /api/tasks/[id]: while a task is
+ * still OPEN, any authenticated session may READ it, so that unassigned workers
+ * can inspect the work before claiming it. This relaxes nothing new in practice
+ * — every field a reader gets is produced by the same whitelist serializer
+ * (serializeTask) that GET /api/tasks already serves to UNAUTHENTICATED callers
+ * — and it is strictly read-only: claim, submission, review and settlement
+ * authorization are enforced elsewhere and are unchanged here.
+ *
+ * Callers that do not pass `allowOpenView` (the /state and /events surfaces)
+ * keep the original creator-or-assignee rule byte-for-byte.
+ */
+export async function getTaskForActor(
+  taskId: string,
+  actorAddress: string,
+  options: { allowOpenView?: boolean } = {}
+) {
   const task = await prisma.task.findUnique({
     where: { id: taskId },
     include: { criteria: true },
   });
   if (!task) return { ok: false as const, reason: "not_found", status: 404 };
-  if (task.creator !== actorAddress && task.assignee !== actorAddress) {
+  const isParticipant =
+    task.creator === actorAddress || task.assignee === actorAddress;
+  // OPEN is the ONLY status a non-participant may ever read, and only when the
+  // caller explicitly opted in. Every other status keeps the existing 403.
+  const openViewer = options.allowOpenView === true && task.status === "OPEN";
+  if (!isParticipant && !openViewer) {
     return { ok: false as const, reason: "forbidden", status: 403 };
   }
   // Deterministic recovery for expired in-flight work: an ASSIGNED or

@@ -75,7 +75,14 @@ export async function requestSettlement(
   if (submission.status !== "APPROVED") {
     return { ok: false, reason: `submission_not_approved:${submission.status}`, status: 409 };
   }
-  if (task.status !== "UNDER_REVIEW") {
+  // Allow settlement when task is UNDER_REVIEW, or when it's SETTLING but the
+  // settlement has not been confirmed on-chain (no txHash or unconfirmed txHash).
+  // This allows retries after broadcast failures without getting stuck in SETTLING.
+  const existingSettlement = await prisma.settlement.findUnique({
+    where: { submissionId: submission.id },
+  });
+  const isConfirmed = existingSettlement?.status === "CONFIRMED";
+  if (task.status !== "UNDER_REVIEW" && !(task.status === "SETTLING" && !isConfirmed)) {
     return { ok: false, reason: `task_not_under_review:${task.status}`, status: 409 };
   }
 

@@ -8,7 +8,13 @@
  * from server-only environment variables via the existing env choke point:
  * - CELO_RPC_URL              (never a public/browser variable)
  * - AGENT_RELAYER_PRIVATE_KEY (never a public/browser variable; never logged)
- * - ATTRIBUTION_TAG           (registered ERC-8021 tag, server-side only)
+ * - ATTRIBUTION_TAG           (registered ERC-8021 code(s), server-side only)
+ *
+ * ATTRIBUTION_TAG accepts ONE OR MORE comma-separated codes, because ERC-8021
+ * suffixes carry multiple codes and must be able to attribute a transaction to
+ * both the application's own code and an issued/registered code (e.g. a
+ * hackathon attribution tag) at the same time. A single value behaves exactly
+ * as before; order is preserved on the wire.
  *
  * Settlement executes on Celo MAINNET (chain 42220) only. There is no
  * fallback chain. Missing/invalid configuration FAILS SAFE: the executor
@@ -28,7 +34,10 @@ export interface RelayerConfig {
   rpcUrl: string;
   /** Private relayer key — server-only, never logged or serialized. */
   privateKey: string;
-  /** Server-configured registered ERC-8021 attribution tag. */
+  /**
+   * Server-configured ERC-8021 attribution code(s) — comma-separated when more
+   * than one. Never client-supplied.
+   */
   attributionTag: string;
   /** Always Celo Mainnet (42220). */
   chainId: number;
@@ -54,6 +63,32 @@ export class RelayerConfigError extends Error {
 
 /** A syntactically valid secp256k1 private key: 0x + 64 hex chars. */
 const PRIVATE_KEY_SHAPE = /^0x[0-9a-fA-F]{64}$/;
+
+/** Upper bound for a single ERC-8021 attribution code. */
+export const MAX_ATTRIBUTION_CODE_LENGTH = 200;
+
+/**
+ * Parse the ATTRIBUTION_TAG configuration into the ERC-8021 code list.
+ *
+ * PURE and deterministic: comma-separated, trimmed, empty segments dropped,
+ * ORDER PRESERVED. A single value yields a single code (identical to the
+ * previous single-tag behaviour); duplicate codes are removed because an
+ * ERC-8021 suffix must not repeat the same code.
+ *
+ * This is what lets a transaction carry both the application's own code and a
+ * separately issued/registered code (e.g. a hackathon attribution tag).
+ */
+export function parseAttributionCodes(raw: string): string[] {
+  const seen = new Set<string>();
+  const codes: string[] = [];
+  for (const segment of raw.split(",")) {
+    const code = segment.trim();
+    if (code.length === 0 || seen.has(code)) continue;
+    seen.add(code);
+    codes.push(code);
+  }
+  return codes;
+}
 
 /**
  * Resolve and validate the production relayer configuration. Throws
@@ -84,7 +119,14 @@ export function getRelayerConfig(): RelayerConfig {
   if (!PRIVATE_KEY_SHAPE.test(privateKey)) {
     throw new RelayerConfigError("invalid_relayer_private_key");
   }
-  if (attributionTag.trim().length === 0 || attributionTag.length > 200) {
+  // Attribution: at least one non-empty code must survive parsing, and no
+  // single code may exceed the bound. Invalid configuration FAILS SAFE (the
+  // executor never broadcasts) rather than sending an untagged transaction.
+  const attributionCodes = parseAttributionCodes(attributionTag);
+  if (
+    attributionCodes.length === 0 ||
+    attributionCodes.some((code) => code.length > MAX_ATTRIBUTION_CODE_LENGTH)
+  ) {
     throw new RelayerConfigError("invalid_attribution_tag");
   }
 

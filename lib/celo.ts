@@ -16,7 +16,7 @@ export const CELO_CHAIN_ID_HEX = "0xa4ec";
 export const CUSD_ADDRESS = "0x765de816845861e75a25fca122bb6898b8b1282a";
 
 /** Public read-only RPC for balance reads (never used for sending). */
-export const PUBLIC_RPC_URL = "https://forno.celo.org";
+export const PUBLIC_RPC_URL = "https://rpc.ankr.com/celo";
 
 /** Human-readable display: 0xce09…21a7 (Plex Mono territory). */
 export function truncateAddress(address: string): string {

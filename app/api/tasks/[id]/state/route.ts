@@ -13,8 +13,9 @@ import {
 import { getTaskForActor } from "@/lib/workflow/TaskService";
 
 /**
- * GET /api/tasks/[id]/state — read-only task-state bundle (authenticated,
- * same ACL as the detail endpoint: creator or assignee only).
+ * GET /api/tasks/[id]/state — read-only task-state bundle (authenticated).
+ * OPEN tasks are viewable by any authenticated session; all other statuses
+ * remain creator-or-assignee only.
  *
  * Decision (per the existing whitelist-serialization architecture): a DEDICATED
  * state endpoint instead of enriching GET /api/tasks/[id], so the existing
@@ -52,7 +53,7 @@ export async function GET(
     return NextResponse.json({ error: "Invalid task id" }, { status: 400 });
   }
 
-  const result = await getTaskForActor(id, actor.address);
+  const result = await getTaskForActor(id, actor.address, { allowOpenView: true });
   if (!result.ok) {
     const message =
       result.reason === "not_found" ? "Task not found" : "Access denied";

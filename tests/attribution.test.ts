@@ -18,6 +18,7 @@ import { buildSettlementCalldata, createDefaultRelayerDeps } from "../lib/settle
 import {
   getRelayerConfig,
   hasRelayerConfig,
+  parseAttributionCodes,
   RelayerConfigError,
 } from "../lib/settlement/RelayerConfig.ts";
 

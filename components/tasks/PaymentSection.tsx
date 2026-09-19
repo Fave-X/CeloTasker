@@ -230,16 +230,21 @@ function RequesterAllowance({ task, approved, authorizeReady, onRefresh }: {
 
   async function readOnChain(owner: string, spender: string) {
     const client = celoClient();
-    const [tokenDecimals, currentAllowance] = await Promise.all([
-      client.readContract({ address: CUSD_ADDRESS, abi: erc20Abi, functionName: "decimals" }),
-      client.readContract({
-        address: CUSD_ADDRESS,
-        abi: erc20Abi,
-        functionName: "allowance",
-        args: [owner as `0x${string}`, spender as `0x${string}`],
-      }),
-    ]);
-    return { decimals: tokenDecimals, allowance: currentAllowance };
+    try {
+      const [tokenDecimals, currentAllowance] = await Promise.all([
+        client.readContract({ address: CUSD_ADDRESS, abi: erc20Abi, functionName: "decimals" }),
+        client.readContract({
+          address: CUSD_ADDRESS,
+          abi: erc20Abi,
+          functionName: "allowance",
+          args: [owner as `0x${string}`, spender as `0x${string}`],
+        }),
+      ]);
+      return { decimals: tokenDecimals, allowance: currentAllowance };
+    } catch {
+      // Return null on any error (chain mismatch, RPC failure, etc.) — caller handles null
+      return { decimals: null, allowance: null };
+    }
   }
 
   // allowance(requester, relayer) + token decimals, read from Celo Mainnet.
@@ -254,9 +259,13 @@ function RequesterAllowance({ task, approved, authorizeReady, onRefresh }: {
         }
         const read = await readOnChain(task.creator, relayer.relayerAddress);
         if (!active) return;
+        // read.allowance/read.decimals will be null if the read failed
         setAllowance(read.allowance);
-        // Whole-cUSD string → base units via viem's integer string parser.
-        setRequired(parseUnits(task.rewardAmount.trim(), read.decimals));
+        if (read.decimals !== null) {
+          // Whole-cUSD string → base units via viem's integer string parser.
+          setRequired(parseUnits(task.rewardAmount.trim(), read.decimals));
+        }
+        // No readError set — readOnChain returns null on failure instead of throwing
       } catch {
         if (active) setReadError("Could not read the cUSD allowance from Celo Mainnet.");
       }
@@ -343,7 +352,27 @@ function RequesterAllowance({ task, approved, authorizeReady, onRefresh }: {
         </Row>
         <Row label="Allowance for this reward">
           {allowance === null || required === null ? (
-            readError ? <span className="text-fail">{readError}</span> : <span className="text-ink-soft">Reading…</span>
+            readError ? (
+              <>
+                <span className="text-fail">{readError}</span>
+                <div className="mt-2">
+                  <Button variant="secondary" size="sm" onClick={() => setAttempt((value) => value + 1)}>
+                    Retry
+                  </Button>
+                </div>
+              </>
+            ) : allowance === null && required === null ? (
+              <>
+                <span className="text-fail">Unable to read allowance — please ensure your wallet is connected to Celo Mainnet</span>
+                <div className="mt-2">
+                  <Button variant="secondary" size="sm" onClick={() => setAttempt((value) => value + 1)}>
+                    Retry allowance read
+                  </Button>
+                </div>
+              </>
+            ) : (
+              <span className="text-ink-soft">Reading…</span>
+            )
           ) : sufficient ? (
             <span>Already authorized for this task.</span>
           ) : (
@@ -352,22 +381,25 @@ function RequesterAllowance({ task, approved, authorizeReady, onRefresh }: {
         </Row>
       </dl>
 
-      {readError && (
-        <div className="mt-4">
-          <Button variant="secondary" size="sm" onClick={() => setAttempt((value) => value + 1)}>
-            Retry
-          </Button>
-        </div>
-      )}
-
       {sufficient ? (
         <p role="status" className="mt-4 text-sm font-medium">cUSD payment authorized</p>
-      ) : approved && !readError ? (
+      ) : approved ? (
         <div className="mt-4">
           <p className="text-sm leading-relaxed text-ink-soft">
             One wallet approval lets the payment relayer collect exactly this reward from your cUSD
             balance when the worker releases payment. It transfers nothing on its own.
           </p>
+          {allowance === null && required === null && (
+            <div className="mt-2">
+              <p className="text-sm text-fail">
+                Unable to read your current cUSD allowance — the "Authorize" button will still work if
+                your wallet is on Celo Mainnet.
+              </p>
+              <Button variant="secondary" size="sm" onClick={() => setAttempt((value) => value + 1)}>
+                Retry allowance read
+              </Button>
+            </div>
+          )}
           {error && <p role="alert" className="mt-3 break-words text-sm text-fail">{error}</p>}
           {phase === "confirming" && (
             <p role="status" className="mt-3 text-sm text-ink-soft">Confirming on Celo…</p>
@@ -405,6 +437,7 @@ function WorkerSettlement({ submissionId, task, settleReady, onRefresh }: {
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<SettlementResponse | null>(null);
   const [ineligible, setIneligible] = useState<string | null>(null);
+  const [retrying, setRetrying] = useState(false);
   const running = useRef(false);
 
   async function release() {
@@ -437,9 +470,34 @@ function WorkerSettlement({ submissionId, task, settleReady, onRefresh }: {
     }
   }
 
+  async function retrySettlement() {
+    if (running.current) return;
+    running.current = true;
+    setPending(true);
+    setError(null);
+    setIneligible(null);
+    try {
+      // Delete the stuck settlement
+      await apiFetch("/api/settlements", {
+        method: "DELETE",
+        cache: "no-store",
+        body: JSON.stringify({ submissionId }),
+      });
+      // State refreshed; a new settlement can now be created
+      onRefresh();
+      setResult(null);
+    } catch (caught) {
+      setError(actionError(caught, "Could not reset settlement for retry."));
+    } finally {
+      running.current = false;
+      setPending(false);
+    }
+  }
+
   const stage = result ? settlementStage(result.settlement, result.transaction, result.note) : null;
   const failed = result?.settlement.status === "FAILED";
   const settled = result?.settlement.status === "CONFIRMED";
+  const stuck = result?.settlement.status === "BROADCAST" || result?.settlement.status === "PENDING";
 
   return (
     <div className="mt-6 border-t border-line pt-6">
@@ -493,6 +551,19 @@ function WorkerSettlement({ submissionId, task, settleReady, onRefresh }: {
           {settled && (
             <p role="status" className="mt-3 text-sm font-medium">Settled</p>
           )}
+          {(stuck || failed) && (
+            <div className="mt-4">
+              <p className="text-sm text-ink-soft">
+                The settlement appears stuck or failed. You can retry by deleting the current
+                settlement record and requesting a fresh one.
+              </p>
+              <div className="mt-3">
+                <Button variant="secondary" size="sm" onClick={retrySettlement} disabled={pending}>
+                  {pending ? "Retrying…" : "Retry settlement"}
+                </Button>
+              </div>
+            </div>
+          )}
           {result.note && result.note !== "already_settled" && (
             <p className="mt-3 break-words text-sm text-ink-soft">Note from the backend: {result.note}</p>
           )}
@@ -536,12 +607,17 @@ export function PaymentSection({ state, isCreator, isWorker, onRefresh }: {
   // Part H: a settlement row exists — the backend already accepted (or can
   // idempotently resume) the worker's request. Covers SETTLING, a
   // still-UNDER_REVIEW task whose settlement exists, and SETTLED/COMPLETED.
+  //
+  // Also allow UNDER_REVIEW with an approved submission: the requester's
+  // on-chain allowance is checked by the settlement endpoint, so the worker
+  // can trigger settlement once the submission is approved.
   const settleReady =
     workerAlive &&
     (task.status === "SETTLING" ||
       task.status === "SETTLED" ||
       task.status === "COMPLETED" ||
       task.status === "PAYMENT_FAILED" ||
+      task.status === "UNDER_REVIEW" ||
       settlement !== null);
 
   if (task.status !== "UNDER_REVIEW" && !settlement && !settleReady && !authorizeReady) {
@@ -602,7 +678,7 @@ function SettlementNote({ settlement, task }: {
           <span className="font-mono text-xs">{settlement.status}</span>
         </Row>
         <Row label="Amount">
-          {formatBaseUnits(BigInt(settlement.amount), 18)} cUSD
+          {settlement.amount} cUSD
         </Row>
         <Row label="Recipient (worker)">
           <span className="break-all font-mono text-xs leading-relaxed">{settlement.recipient}</span>

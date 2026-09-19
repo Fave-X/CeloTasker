@@ -399,10 +399,15 @@ function ConfirmationBlock({ task, submission, evaluation, isCreator, onRefresh 
   onRefresh: () => void;
 }) {
   if (!isCreator || !evaluation) return null;
-  const awaitingConfirmation =
-    evaluation.decision === "PENDING_HUMAN_CONFIRMATION" &&
+  // The AI review outcome is PENDING_HUMAN_CONFIRMATION when the requester CAN confirm.
+  // Check both decision and outcome fields since the review service records the outcome
+  // in both fields but we should be robust to either.
+  const isPendingConfirmation =
+    (evaluation.decision === "PENDING_HUMAN_CONFIRMATION" ||
+      evaluation.outcome === "PENDING_HUMAN_CONFIRMATION") &&
     task.status === "UNDER_REVIEW" &&
     submission.status === "PENDING";
+  const awaitingConfirmation = isPendingConfirmation;
   return (
     <div className="mt-6 border-t border-line pt-6">
       <h3 className="text-sm font-medium text-ink-soft">Requester confirmation</h3>

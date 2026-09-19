@@ -7,42 +7,44 @@ import { useWallet } from "@/components/wallet/WalletProvider";
 
 const inputClass = "mt-2 block w-full rounded-control border border-line-strong bg-paper-raised px-3 py-2 text-sm text-ink";
 
-/** Mirrors the backend contentRef bound (z.string().max(2048)). */
+/** Mirrors the backend contentRef bound (z.string().min(1).max(2048)). */
 const MAX_CONTENT_REF_LENGTH = 2048;
 
-/**
- * The backend stores exactly ONE opaque reference string per submission
- * (contentRef: 1..2048 chars, ipfs:// or a well-formed https URL). The demo
- * submission carries a public HTTPS URL plus a one-sentence purpose, so both
- * travel inside that single reference: the sentence becomes an encoded
- * `purpose` query parameter. The result is still one well-formed https URI —
- * the deterministic validator's requirement — and the reviewer sees the ref
- * verbatim later. No new storage architecture.
- */
-export function buildContentRef(url: string, purpose: string): string | null {
-  try {
-    const parsed = new URL(url);
-    if (parsed.protocol !== "https:" || parsed.hostname.length === 0) return null;
-    parsed.searchParams.set("purpose", purpose);
-    return parsed.toString();
-  } catch {
-    return null;
-  }
-}
+/** A rubric line as the worker needs to read it. */
+type SubmissionCriterion = {
+  id: string;
+  description: string;
+  weight: number;
+  order: number;
+};
 
-export function SubmitWorkForm({ taskId, deadline, onSubmitSuccess }: {
+/**
+ * The worker submission form. Everything shown here is derived from the task
+ * record itself — title, description and the success criteria — so the worker
+ * answers against exactly what the requester asked for.
+ *
+ * The backend stores ONE opaque `contentRef` string per submission (1..2048
+ * chars). It is now the worker's raw text, verbatim: no URL building and no
+ * query parameters. The optional evidence link is deliberately NOT folded into
+ * contentRef, so it stays with this form and is never sent.
+ */
+export function SubmitWorkForm({ taskId, title, description, criteria, deadline, onSubmitSuccess }: {
   taskId: string;
+  title: string;
+  description: string;
+  criteria: readonly SubmissionCriterion[];
   deadline: string | null;
   onSubmitSuccess: () => void;
 }) {
   const wallet = useWallet();
   const authenticated = wallet.status === "authenticated" && !!wallet.sessionAddress && wallet.onCelo;
-  const [url, setUrl] = useState("");
-  const [purpose, setPurpose] = useState("");
+  const [answer, setAnswer] = useState("");
+  const [evidenceUrl, setEvidenceUrl] = useState("");
   const [pending, setPending] = useState(false);
   const [errors, setErrors] = useState<string[]>([]);
   const submitting = useRef(false);
   const deadlinePassed = deadline ? new Date(deadline).getTime() <= Date.now() : false;
+  const orderedCriteria = [...criteria].sort((a, b) => a.order - b.order);
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -56,18 +58,13 @@ export function SubmitWorkForm({ taskId, deadline, onSubmitSuccess }: {
       setErrors(["The deadline has passed, so this task is no longer accepting submissions."]);
       return;
     }
-    const sentence = purpose.trim().replace(/\s+/g, " ");
-    if (sentence.length === 0) {
-      setErrors(["Add one sentence explaining what the website is for."]);
-      return;
-    }
-    const reference = buildContentRef(url.trim(), sentence);
-    if (!reference) {
-      setErrors(["Enter a public https:// URL, for example https://example.com."]);
+    const reference = answer.trim();
+    if (reference.length === 0) {
+      setErrors(["Describe the work you completed before submitting."]);
       return;
     }
     if (reference.length > MAX_CONTENT_REF_LENGTH) {
-      setErrors(["The URL plus sentence is too long for a single reference. Use a shorter URL or sentence."]);
+      setErrors([`Your response is ${reference.length} characters; the limit is ${MAX_CONTENT_REF_LENGTH}. Shorten it and try again.`]);
       return;
     }
     submitting.current = true;
@@ -91,23 +88,59 @@ export function SubmitWorkForm({ taskId, deadline, onSubmitSuccess }: {
     }
   }
 
-  const preview = purpose.trim() ? buildContentRef(url.trim(), purpose.trim().replace(/\s+/g, " ")) : null;
-
   return (
     <section aria-labelledby="submit-heading" className="mt-7 border-t border-line pt-6">
       <h2 id="submit-heading" className="text-lg font-medium">Submit your work</h2>
-      <p className="mt-2 text-sm leading-relaxed text-ink-soft">
-        Provide the public link to the work you completed, plus one sentence on what the website is for. Both travel together as the submission reference.
-      </p>
+      
+      {/* Task context — rendered from the server-side task record */}
+      <section className="mt-4 space-y-3">
+        <h3 className="text-lg font-semibold">{title}</h3>
+        <p className="whitespace-pre-wrap break-words text-sm leading-relaxed text-ink-soft">{description}</p>
+        {orderedCriteria.length > 0 && (
+          <div className="mt-3 space-y-2">
+            <h4 className="text-sm font-medium text-ink-soft">Success criteria (in rubric order):</h4>
+            <ol className="space-y-2">
+              {orderedCriteria.map((c, i) => (
+                <li key={c.id} className="flex gap-2 text-sm text-ink-soft">
+                  <span className="font-mono text-xs text-ink-faint shrink-0">{String(i + 1).padStart(2, "0")}.</span>
+                  <span className="break-words">{c.description}</span>
+                  <span className="text-xs text-ink-faint shrink-0">Weight {c.weight}</span>
+                </li>
+              ))}
+            </ol>
+          </div>
+        )}
+      </section>
+
       <form onSubmit={submit} className="mt-5 space-y-5">
-        <fieldset disabled={pending} className="space-y-5 disabled:opacity-60">
-          <label className="block text-sm font-medium">Public URL of the work
-            <input required type="url" inputMode="url" placeholder="https://example.com" value={url} onChange={(event) => setUrl(event.target.value)} className={inputClass} />
+        <fieldset disabled={pending} className="space-y-4 disabled:opacity-60">
+          <label className="block text-sm font-medium">
+            Your submission
+            <textarea
+              required
+              minLength={1}
+              maxLength={MAX_CONTENT_REF_LENGTH}
+              value={answer}
+              onChange={(e) => setAnswer(e.target.value)}
+              className={inputClass}
+              rows={6}
+              placeholder="Describe the work you completed. Be specific — this text becomes the submission reference."
+            />
           </label>
-          <label className="block text-sm font-medium">What is the website for? (one sentence)
-            <input required maxLength={300} value={purpose} onChange={(event) => setPurpose(event.target.value)} className={inputClass} />
+          <label className="block text-sm font-medium">
+            Evidence link (optional)
+            <input
+              type="url"
+              inputMode="url"
+              placeholder="https://example.com/proof.png"
+              value={evidenceUrl}
+              onChange={(e) => setEvidenceUrl(e.target.value)}
+              className={inputClass}
+            />
+            <p className="mt-1 text-xs text-ink-soft">
+              Optional supporting URL (not sent as part of the submission reference).
+            </p>
           </label>
-          {preview && <p className="break-all font-mono text-xs leading-relaxed text-ink-soft">Reference to submit: {preview}</p>}
         </fieldset>
         {errors.length > 0 && (
           <div role="alert" className="rounded-control bg-fail-wash p-4 text-sm text-fail">

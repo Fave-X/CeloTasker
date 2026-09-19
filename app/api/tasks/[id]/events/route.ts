@@ -7,7 +7,8 @@ import { getTaskForActor } from "@/lib/workflow/TaskService";
 
 /**
  * GET /api/tasks/[id]/events — read-only audit trail for one task
- * (authenticated, same ACL as the detail endpoint: creator or assignee).
+ * (authenticated). OPEN tasks are viewable by any authenticated session; all
+ * other statuses remain creator-or-assignee only.
  *
  * The append-only TaskEvent records are the system's real activity: nothing
  * is manufactured here, and only whitelisted fields are exposed. Chronological
@@ -38,8 +39,9 @@ export async function GET(
     return NextResponse.json({ error: "Invalid task id" }, { status: 400 });
   }
 
-  // Same access control as the detail endpoint.
-  const access = await getTaskForActor(id, actor.address);
+  // OPEN tasks are viewable by any authenticated session; all other statuses
+  // remain creator-or-assignee only.
+  const access = await getTaskForActor(id, actor.address, { allowOpenView: true });
   if (!access.ok) {
     const message =
       access.reason === "not_found" ? "Task not found" : "Access denied";

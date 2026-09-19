@@ -31,7 +31,7 @@ import { celo } from "viem/chains";
 import { concatHex } from "viem";
 // Official ERC-8021 implementation — the suffix format is never re-invented.
 import { Attribution } from "ox/erc8021";
-import { getRelayerConfig, RELAYER_CHAIN_ID } from "./RelayerConfig.ts";
+import { getRelayerConfig, RELAYER_CHAIN_ID, parseAttributionCodes } from "./RelayerConfig.ts";
 
 /** Minimal structural receipt (mockable in tests). */
 export interface RelayerReceipt {
@@ -183,10 +183,13 @@ export interface SettlementCalldata {
  *
  *   data = encodeFunctionData(transferFrom(owner, recipient, parseUnits(
  *            amount, on-chain decimals))) + Attribution.toDataSuffix({
- *            codes: [server-side tag] })
+ *            codes: [server-side codes] })
  *
  * The suffix is appended AFTER the original calldata, exactly once, using the
- * official ox/erc8021 implementation.
+ * official ox/erc8021 implementation. ERC-8021 suffixes carry MULTIPLE codes,
+ * so the application's own code and any issued/registered code (e.g. a
+ * hackathon attribution tag) are encoded together, in configured order: a
+ * transaction can never be re-tagged after it is sent.
  */
 export function buildSettlementCalldata(params: {
   owner: string;
@@ -195,7 +198,10 @@ export function buildSettlementCalldata(params: {
   amount: string;
   /** Decimals read from the verified token contract. */
   decimals: number;
-  /** Server-side registered attribution tag (never client-supplied). */
+  /**
+   * Server-side ERC-8021 code(s), comma-separated when more than one (never
+   * client-supplied). Order is preserved.
+   */
   attributionTag: string;
 }): SettlementCalldata {
   const amountBaseUnits = parseUnits(params.amount, params.decimals);
@@ -208,8 +214,10 @@ export function buildSettlementCalldata(params: {
       amountBaseUnits,
     ],
   });
+  // Every configured code is encoded into the single suffix (official
+  // ox/erc8021 encoder — the wire format is never re-invented here).
   const attributionSuffix = Attribution.toDataSuffix({
-    codes: [params.attributionTag],
+    codes: parseAttributionCodes(params.attributionTag),
   });
   return {
     data: concatHex([transferFromCalldata, attributionSuffix]),
@@ -228,10 +236,14 @@ export async function broadcastTransferFrom(
   deps: RelayerDeps,
   params: { token: string; data: string }
 ): Promise<string> {
+  // The walletClient was created with the relayer's private key account.
+  // Passing a plain address string as `account` would cause viem to use
+  // eth_sendTransaction (requires node-side key). Omit `account` to use
+  // the walletClient's pre-configured account and sign locally via
+  // eth_sendRawTransaction.
   return deps.walletClient.sendTransaction({
     to: params.token,
     data: params.data,
-    account: deps.relayerAddress,
   });
 }
 
