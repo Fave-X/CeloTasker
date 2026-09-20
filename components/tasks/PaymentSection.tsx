@@ -62,15 +62,6 @@ function celoClient() {
   return createPublicClient({ chain: celo, transport: http(PUBLIC_RPC_URL) });
 }
 
-/** Integer-only base-unit formatting: BigInt division, never floating point. */
-function formatBaseUnits(value: bigint, decimals: number): string {
-  const base = 10n ** BigInt(decimals);
-  const whole = value / base;
-  const fraction = value % base;
-  if (fraction === 0n) return whole.toString();
-  return `${whole}.${fraction.toString().padStart(decimals, "0").replace(/0+$/, "")}`;
-}
-
 /** Plain definition list row (label left, value right), mobile-friendly. */
 function Row({ label, children }: { label: string; children: ReactNode }) {
   return (
@@ -392,7 +383,7 @@ function RequesterAllowance({ task, approved, authorizeReady, onRefresh }: {
           {allowance === null && required === null && (
             <div className="mt-2">
               <p className="text-sm text-fail">
-                Unable to read your current cUSD allowance — the "Authorize" button will still work if
+                Unable to read your current cUSD allowance — the &quot;Authorize&quot; button will still work if
                 your wallet is on Celo Mainnet.
               </p>
               <Button variant="secondary" size="sm" onClick={() => setAttempt((value) => value + 1)}>
@@ -437,7 +428,6 @@ function WorkerSettlement({ submissionId, task, settleReady, onRefresh }: {
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<SettlementResponse | null>(null);
   const [ineligible, setIneligible] = useState<string | null>(null);
-  const [retrying, setRetrying] = useState(false);
   const running = useRef(false);
 
   async function release() {

@@ -48,7 +48,7 @@ export function ActivityLookup() {
         its trail — it is shown at the bottom of every task page.
       </p>
       <p className="mt-5 border-l-2 border-line-strong pl-3.5 text-[13px] leading-relaxed text-ink-faint">
-        A single task's trail can also be opened directly at
+        A single task&apos;s trail can also be opened directly at
         /activity?task=&lt;task id&gt;.
       </p>
       <div className="mt-7 flex flex-wrap gap-5 text-sm text-celo">
