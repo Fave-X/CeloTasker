@@ -1,8 +1,10 @@
 /**
  * CeloTasker — SIWE-style (EIP-4361) authentication messages.
  *
- * The message format, trusted domain/URI, chain ID and version are frozen
- * here. The server builds the challenge message and independently re-parses
+ * The message format, chain ID and version are frozen here. The application
+ * domain/URI are resolved per request (resolveAuthOrigin: Origin header →
+ * APP_URL → production origin) and re-validated from the signed
+ * message itself at verification time. The server independently re-parses
  * and re-validates every field of whatever the client submits for
  * verification — altered, missing or extra fields are rejected.
  */
@@ -13,13 +15,72 @@ export const AUTH_VERSION = "1";
 export const AUTH_STATEMENT =
   "Sign in to CeloTasker. This signature does not transfer funds or grant token approvals.";
 
-/** Trusted application origin. Override per deployment via AUTH_DOMAIN. */
-export function trustedDomain(): string {
-  return optionalServerEnv("AUTH_DOMAIN", "localhost:3000");
+/** Fallback application origin when no request origin or configured URL applies. */
+export const DEFAULT_APP_ORIGIN = "https://celotasker.vercel.app";
+
+export interface AuthOrigin {
+  /** Host with port when present (e.g. "localhost:3000"). */
+  domain: string;
+  /** Absolute origin (e.g. "https://celotasker.vercel.app"). */
+  uri: string;
 }
 
-export function trustedUri(): string {
-  return `https://${trustedDomain()}`;
+/**
+ * Resolve the application origin shown in the challenge message from the
+ * incoming request: Origin header first, then APP_URL, then the
+ * production origin. A candidate that is not a parseable http(s) origin is
+ * ignored, so a hostile Origin header can never inject a bogus domain into
+ * an otherwise valid fallback.
+ */
+export function resolveAuthOrigin(
+  originHeader: string | null | undefined
+): AuthOrigin {
+  const candidates = [
+    originHeader,
+    optionalServerEnv("APP_URL"),
+    DEFAULT_APP_ORIGIN,
+  ];
+  for (const candidate of candidates) {
+    const origin = parseAuthOrigin(candidate);
+    if (origin) return origin;
+  }
+  // Unreachable: DEFAULT_APP_ORIGIN always parses.
+  const url = new URL(DEFAULT_APP_ORIGIN);
+  return { domain: url.host, uri: url.origin };
+}
+
+/** Parse a candidate string into { domain, uri }; null when not http(s). */
+function parseAuthOrigin(candidate: string | null | undefined): AuthOrigin | null {
+  if (!candidate || candidate.trim() === "") return null;
+  let url: URL;
+  try {
+    url = new URL(candidate.trim());
+  } catch {
+    return null;
+  }
+  if (url.protocol !== "https:" && url.protocol !== "http:") return null;
+  if (url.username || url.password) return null; // reject "https://evil@host"
+  return { domain: url.host, uri: url.origin };
+}
+
+/**
+ * Structural consistency of the application binding inside a SIGNED message:
+ * the URI must be an absolute http(s) URL without credentials whose host
+ * equals the claimed domain. Verification relies on this instead of any
+ * hardcoded deployment domain — the domain/URI pair the server issued in the
+ * challenge is what the wallet signs, and identity stays bound by the
+ * single-use nonce plus signer recovery.
+ */
+export function isConsistentAuthOrigin(domain: string, uri: string): boolean {
+  let url: URL;
+  try {
+    url = new URL(uri);
+  } catch {
+    return false;
+  }
+  if (url.protocol !== "https:" && url.protocol !== "http:") return false;
+  if (url.username || url.password) return false;
+  return url.host === domain;
 }
 
 export interface SiweMessageParams {

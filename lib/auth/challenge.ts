@@ -30,7 +30,7 @@ export interface ChallengeOptions {
   uri: string;
 }
 
-export function createChallenge(address: string): {
+export function createChallenge(address: string, origin?: AuthOrigin): {
   nonce: string;
   message: string;
   issuedAt: string;
@@ -48,15 +48,19 @@ export function createChallenge(address: string): {
     used: false,
   });
 
+  // Challenge origin: the route passes the request's resolved origin; the
+  // env/config fallback chain applies when none is available.
+  const resolved = origin ?? resolveAuthOrigin(null);
+
   // buildSiweMessage imported lazily to keep this module dependency-light.
-  const message = buildChallengeMessage(address, nonce, issuedAt, expiresAtMs);
+  const message = buildChallengeMessage(address, nonce, issuedAt, expiresAtMs, resolved);
   return {
     nonce,
     message,
     issuedAt: issuedAt.toISOString(),
     expirationTime: new Date(expiresAtMs).toISOString(),
-    domain: trustedDomainForMessage(),
-    uri: trustedUriForMessage(),
+    domain: resolved.domain,
+    uri: resolved.uri,
   };
 }
 
@@ -94,20 +98,21 @@ export function resetChallenges(): void {
 // Imported here (module bottom) to avoid circular imports in editors.
 import {
   buildSiweMessage,
-  trustedDomain as trustedDomainForMessage,
-  trustedUri as trustedUriForMessage,
+  resolveAuthOrigin,
+  type AuthOrigin,
 } from "./siwe.ts";
 
 function buildChallengeMessage(
   address: string,
   nonce: string,
   issuedAt: Date,
-  expiresAtMs: number
+  expiresAtMs: number,
+  origin: AuthOrigin
 ): string {
   return buildSiweMessage({
-    domain: trustedDomainForMessage(),
+    domain: origin.domain,
     address,
-    uri: trustedUriForMessage(),
+    uri: origin.uri,
     nonce,
     issuedAt: issuedAt.toISOString(),
     expirationTime: new Date(expiresAtMs).toISOString(),

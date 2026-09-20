@@ -1,4 +1,5 @@
 import { createChallenge } from "@/lib/auth/challenge";
+import { resolveAuthOrigin } from "@/lib/auth/siwe";
 import { ChallengeRequestSchema } from "@/lib/validation/AuthSchemas";
 import { rateLimit, clientKeyFromRequest } from "@/lib/security/rateLimit";
 
@@ -34,8 +35,12 @@ export async function POST(request: Request) {
     );
   }
 
-  // Signature/nonce material is never logged.
-  const challenge = createChallenge(parsed.data.address);
+  // Signature/nonce material is never logged. The challenge carries the
+  // request's own origin (Origin header, then APP_URL, then the production
+  // origin) so wallets see the domain they are actually signing on, in every
+  // deployment.
+  const origin = resolveAuthOrigin(request.headers.get("origin"));
+  const challenge = createChallenge(parsed.data.address, origin);
   return Response.json(
     {
       message: challenge.message,

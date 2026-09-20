@@ -87,3 +87,35 @@ test("body wallet addresses can never establish identity", async () => {
   assert.equal(actor.authenticated, false);
   assert.equal(actor.address, null);
 });
+
+test("challenge origin comes from the request and the signed message stays self-consistent", async () => {
+  resetChallenges();
+  const localhost = { domain: "localhost:3000", uri: "http://localhost:3000" };
+  const challenge = createChallenge(WALLET.address, localhost);
+  assert.ok(
+    challenge.message.startsWith("localhost:3000 wants you to sign in"),
+    `unexpected domain in message: ${challenge.message.split("\n")[0]}`
+  );
+  assert.ok(challenge.message.includes("URI: http://localhost:3000"));
+  assert.equal(challenge.domain, "localhost:3000");
+
+  // A challenge issued for the request's own origin verifies end-to-end.
+  const signature = await WALLET.signMessage({ message: challenge.message });
+  assert.equal((await verifySignedChallenge(challenge.message, signature)).ok, true);
+
+  // A signed message whose URI host disagrees with its claimed domain is
+  // rejected — verification reads the binding from the message itself.
+  const swapped = challenge.message.replace(
+    "URI: http://localhost:3000",
+    "URI: http://evil.example.com"
+  );
+  const badSignature = await WALLET.signMessage({ message: swapped });
+  const bad = await verifySignedChallenge(swapped, badSignature);
+  assert.equal(bad.ok, false);
+  if (!bad.ok) {
+    assert.ok(
+      ["wrong_domain", "wrong_uri", "malformed_message"].includes(bad.reason),
+      `unexpected reason ${bad.reason}`
+    );
+  }
+});

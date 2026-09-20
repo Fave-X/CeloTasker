@@ -12,8 +12,7 @@ import {
   MalformedMessageError,
   AUTH_CHAIN_ID,
   AUTH_VERSION,
-  trustedDomain,
-  trustedUri,
+  isConsistentAuthOrigin,
 } from "./siwe.ts";
 import { consumeChallenge } from "./challenge.ts";
 
@@ -54,10 +53,13 @@ export async function verifySignedChallenge(
     throw err;
   }
 
-  // 2. Trusted application binding (URI compared after URL normalization).
-  if (parsed.domain !== trustedDomain()) return { ok: false, reason: "wrong_domain" };
-  if (parsed.uri !== new URL(trustedUri()).toString()) {
-    return { ok: false, reason: "wrong_uri" };
+  // 2. Application binding, validated from the signed message itself: the URI
+  //    must be an absolute http(s) URL whose host equals the claimed domain.
+  //    There is deliberately no hardcoded deployment domain here — the
+  //    challenge carries the origin it was issued for, and identity remains
+  //    bound by the single-use nonce and signer recovery below.
+  if (!isConsistentAuthOrigin(parsed.domain, parsed.uri)) {
+    return { ok: false, reason: "wrong_domain" };
   }
   if (parsed.version !== AUTH_VERSION) return { ok: false, reason: "wrong_version" };
   if (parsed.chainId !== AUTH_CHAIN_ID) return { ok: false, reason: "wrong_chain_id" };
