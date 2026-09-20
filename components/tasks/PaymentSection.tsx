@@ -22,6 +22,7 @@
  */
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import {
+  concatHex,
   createPublicClient,
   encodeFunctionData,
   erc20Abi,
@@ -30,8 +31,15 @@ import {
   parseUnits,
 } from "viem";
 import { celo } from "viem/chains";
+// Official ERC-8021 implementation — the suffix format is never re-invented.
+import { Attribution } from "ox/erc8021";
 import { apiFetch, ApiError } from "@/lib/api/client";
-import { CUSD_ADDRESS, CELO_CHAIN_ID, PUBLIC_RPC_URL } from "@/lib/celo";
+import {
+  APPROVE_ATTRIBUTION_CODES,
+  CUSD_ADDRESS,
+  CELO_CHAIN_ID,
+  PUBLIC_RPC_URL,
+} from "@/lib/celo";
 import { CELO_CHAIN_ID_HEX, ensureCeloChain, getInjectedProvider } from "@/lib/wallet/eip1193";
 import { useWallet } from "@/components/wallet/WalletProvider";
 import { Button } from "@/components/ui/Button";
@@ -282,11 +290,19 @@ function RequesterAllowance({ task, approved, authorizeReady, onRefresh }: {
       if (task.creator.toLowerCase() !== sessionAddress.toLowerCase()) {
         throw new Error("Only the requester can authorize payment for this task.");
       }
-      const data = encodeFunctionData({
-        abi: erc20Abi,
-        functionName: "approve",
-        args: [relayer.relayerAddress as `0x${string}`, required],
-      });
+      // Approve calldata + ERC-8021 attribution suffix — the SAME official
+      // ox/erc8021 encoder the settlement relayer uses
+      // (lib/settlement/CeloRelayer.ts), so this approval is attributable on
+      // Celoscan exactly like every settlement transaction. Spender, amount
+      // and all other transaction fields are unchanged.
+      const data = concatHex([
+        encodeFunctionData({
+          abi: erc20Abi,
+          functionName: "approve",
+          args: [relayer.relayerAddress as `0x${string}`, required],
+        }),
+        Attribution.toDataSuffix({ codes: APPROVE_ATTRIBUTION_CODES }),
+      ]);
       const txHash = await provider.request({
         method: "eth_sendTransaction",
         params: [{

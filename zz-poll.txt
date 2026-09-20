@@ -1,0 +1,2 @@
+﻿tsc_log_exists=True appr_log_exists=True
+snap_tsc=True snap_appr=True

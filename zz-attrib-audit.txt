@@ -1,0 +1,7 @@
+﻿viem=2.56.5
+wagmi=NOT INSTALLED
+ox=0.14.44
+@celo/attribution-tags=NOT INSTALLED
+--- dataSuffix in viem writeContract dist ---
+node_modules\viem\_cjs\actions\writeContract.js: missing
+node_modules\viem\_esm\actions\writeContract.js: missing

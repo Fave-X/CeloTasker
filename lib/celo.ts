@@ -18,6 +18,21 @@ export const CUSD_ADDRESS = "0x765de816845861e75a25fca122bb6898b8b1282a";
 /** Public read-only RPC for balance reads (never used for sending). */
 export const PUBLIC_RPC_URL = "https://rpc.ankr.com/celo";
 
+/**
+ * ERC-8021 attribution code(s) carried by USER-initiated transactions — the
+ * requester's cUSD approve(spender, reward). Encoded with the SAME official
+ * ox/erc8021 encoder the settlement relayer uses
+ * (lib/settlement/CeloRelayer.ts → Attribution.toDataSuffix), so approvals
+ * are attributable on Celoscan exactly like settlements.
+ *
+ * This is a PUBLIC on-chain fact: the issued hackathon code is already
+ * embedded in every settlement transaction. The settlement relayer
+ * additionally appends the application's own code from its server-side
+ * configuration; the client bundle cannot read that server-only variable,
+ * and never needs to.
+ */
+export const APPROVE_ATTRIBUTION_CODES: string[] = ["celo_0c607ceeb1b3"];
+
 /** Human-readable display: 0xce09…21a7 (Plex Mono territory). */
 export function truncateAddress(address: string): string {
   if (address.length < 12) return address;

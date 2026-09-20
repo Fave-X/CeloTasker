@@ -1,0 +1,29 @@
+(node:15284) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/USER/OneDrive/Desktop/CELO%20HACKATHON/CELO-TASKER/tests/approvalAttribution.test.ts is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to \\?\C:\Users\USER\OneDrive\Desktop\CELO HACKATHON\CELO-TASKER\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+✔ approve suffix comes from the SAME ox/erc8021 encoder and decodes back to the tag (8.204ms)
+✔ pristine approve prefix is preserved byte-for-byte (spender and amount unchanged) (1.6349ms)
+✔ suffix is appended EXACTLY ONCE and the full calldata decodes to the tag (1.5732ms)
+✔ client constant and settlement pipeline produce byte-identical suffixes (1.1889ms)
+(node:6200) [MODULE_TYPELESS_PACKAGE_JSON] Warning: Module type of file:///C:/Users/USER/OneDrive/Desktop/CELO%20HACKATHON/CELO-TASKER/tests/attribution.test.ts is not specified and it doesn't parse as CommonJS.
+Reparsing as ES module because module syntax was detected. This incurs a performance overhead.
+To eliminate this warning, add "type": "module" to \\?\C:\Users\USER\OneDrive\Desktop\CELO HACKATHON\CELO-TASKER\package.json.
+(Use `node --trace-warnings ...` to show where the warning was created)
+✔ suffix is generated through ox/erc8021 and decodes back to the tag (8.3115ms)
+✔ calldata: suffix appended AFTER the original calldata, exactly once (11.0156ms)
+✔ calldata: a different server tag produces a different suffix; deterministic (3.3866ms)
+✔ decimals come from the contract parameter, never hardcoded (2.0092ms)
+✔ attribution tag is server-side configuration; the client has no input path (1.8ms)
+✔ missing attribution configuration fails safely — no tag is ever invented (3.5933ms)
+✔ missing RPC URL or private key fails safely with secret-free errors (1.7043ms)
+✔ the relay is pinned to Celo Mainnet (42220) — no fallback chain exists (4.7041ms)
+ℹ tests 12
+ℹ suites 0
+ℹ pass 12
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 4620.1829
+APPR_EXIT=0  

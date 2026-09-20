@@ -1,0 +1,5 @@
+﻿single-code suffix : 0x63656c6f5f306336303763656562316233110080218021802180218021802180218021
+two-code suffix    : 0x43656c6f5461736b65722c63656c6f5f3063363037636565623162331c0080218021802180218021802180218021
+single endsWith required: false
+two-code endsWith required: false
+decode probe unavailable: TypeError: Attribution.fromDataSuffix is not a function
